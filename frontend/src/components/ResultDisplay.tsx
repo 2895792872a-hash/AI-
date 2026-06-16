@@ -1,147 +1,101 @@
+import { useState } from "react";
+import { CheckCircle, XCircle, Copy, Check } from "lucide-react";
 import { SSEEvent } from "../hooks/useSSE";
 
 interface Props {
   event: SSEEvent;
-  events: SSEEvent[];
 }
 
-export default function ResultDisplay({ event, events }: Props) {
-  const isError = event.type === "error";
-  const isDone = event.type === "done";
+function formatText(text: string): string {
+  return text
+    .replace(/^## (.+)$/gm, "<h2>$1</h2>")
+    .replace(/^### (.+)$/gm, "<h3>$1</h3>")
+    .replace(/^- (.+)$/gm, "<li>$1</li>")
+    .replace(/`([^`]+)`/g, "<code>$1</code>")
+    .replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>")
+    .replace(/\n\n/g, "</p><p>")
+    .replace(/\n/g, "<br/>");
+}
 
-  const totalSteps = event.total_steps || 0;
-  const successCount = event.success_count || 0;
-  const failCount = event.fail_count || 0;
+function parseTable(text: string): { headers: string[]; rows: string[][] } | null {
+  const lines = text.split("\n");
+  const tableLines = lines.filter((l) => l.includes("|"));
+  if (tableLines.length < 2) return null;
+
+  const dataRows = tableLines
+    .filter((l) => !l.includes("---"))
+    .map((l) =>
+      l
+        .split("|")
+        .map((c) => c.trim())
+        .filter(Boolean)
+    );
+  if (dataRows.length < 2) return null;
+
+  return { headers: dataRows[0], rows: dataRows.slice(1) };
+}
+
+export default function ResultDisplay({ event }: Props) {
+  const [copied, setCopied] = useState(false);
+  const isError = event.type === "error";
+
+  const summary = event.summary || "";
+  const tableData = parseTable(summary);
+
+  const handleCopy = () => {
+    navigator.clipboard.writeText(summary).then(() => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    });
+  };
 
   return (
-    <div style={{
-      ...styles.card,
-      borderColor: isError ? "#f85149" : "#238636",
-    }}>
-      <h2 style={{
-        ...styles.heading,
-        color: isError ? "#f85149" : "#3fb950",
-      }}>
-        {isError ? "❌ 执行失败" : "✅ 任务完成"}
-      </h2>
+    <div className={`result-card ${isError ? "error" : "success"}`}>
+      <div className="result-header">
+        <span className="result-icon">
+          {isError ? (
+            <XCircle size={16} color="var(--error)" />
+          ) : (
+            <CheckCircle size={16} color="var(--success)" />
+          )}
+        </span>
+        <span className="result-status" style={{ color: isError ? "var(--error)" : "var(--success)" }}>
+          {isError ? "执行失败" : "任务完成"}
+        </span>
+      </div>
 
-      {/* Summary */}
-      {event.summary && (
-        <div style={styles.section}>
-          <h3 style={styles.sectionTitle}>结果</h3>
-          <p style={styles.summary}>{event.summary}</p>
+      {summary && (
+        <div className="result-body">
+          {tableData ? (
+            <table>
+              <thead>
+                <tr>{tableData.headers.map((h, i) => <th key={i}>{h}</th>)}</tr>
+              </thead>
+              <tbody>
+                {tableData.rows.map((row, ri) => (
+                  <tr key={ri}>{row.map((c, ci) => <td key={ci}>{c}</td>)}</tr>
+                ))}
+              </tbody>
+            </table>
+          ) : (
+            <div dangerouslySetInnerHTML={{ __html: `<p>${formatText(summary)}</p>` }} />
+          )}
         </div>
       )}
 
-      {/* Error */}
-      {event.error && (
-        <div style={styles.section}>
-          <h3 style={styles.sectionTitle}>错误信息</h3>
-          <pre style={styles.errorText}>{event.error}</pre>
-        </div>
-      )}
+      {event.error && <pre className="result-error-box">{event.error}</pre>}
 
-      {/* Stats */}
-      {isDone && (
-        <div style={styles.stats}>
-          <div style={styles.stat}>
-            <span style={styles.statValue}>{totalSteps}</span>
-            <span style={styles.statLabel}>总步骤</span>
-          </div>
-          <div style={styles.stat}>
-            <span style={{ ...styles.statValue, color: "#3fb950" }}>{successCount}</span>
-            <span style={styles.statLabel}>成功</span>
-          </div>
-          <div style={styles.stat}>
-            <span style={{ ...styles.statValue, color: failCount > 0 ? "#f85149" : "#484f58" }}>
-              {failCount}
-            </span>
-            <span style={styles.statLabel}>失败</span>
-          </div>
-          <div style={styles.stat}>
-            <span style={styles.statValue}>
-              {totalSteps > 0 ? Math.round((successCount / totalSteps) * 100) : 0}%
-            </span>
-            <span style={styles.statLabel}>成功率</span>
-          </div>
-        </div>
-      )}
-
-      {/* Extracted data */}
-      {event.data && (
-        <div style={styles.section}>
-          <h3 style={styles.sectionTitle}>结构化数据</h3>
-          <pre style={styles.jsonBlock}>
-            {JSON.stringify(event.data, null, 2)}
-          </pre>
-        </div>
-      )}
+      <div className="result-meta">
+        <span>
+          共 {event.total_steps || 0} 步 · {event.success_count || 0} 成功 · {event.fail_count || 0} 失败
+        </span>
+        {summary && (
+          <button className="result-copy-btn" onClick={handleCopy}>
+            {copied ? <Check size={12} /> : <Copy size={12} />}
+            {copied ? "已复制" : "复制结果"}
+          </button>
+        )}
+      </div>
     </div>
   );
 }
-
-const styles: Record<string, React.CSSProperties> = {
-  card: {
-    background: "#161b22",
-    border: "1px solid #30363d",
-    borderRadius: 8,
-    padding: 20,
-  },
-  heading: {
-    fontSize: 20,
-    marginBottom: 16,
-  },
-  section: {
-    marginBottom: 16,
-  },
-  sectionTitle: {
-    fontSize: 14,
-    color: "#8b949e",
-    marginBottom: 8,
-  },
-  summary: {
-    fontSize: 14,
-    color: "#c9d1d9",
-    lineHeight: 1.6,
-    whiteSpace: "pre-wrap",
-  },
-  errorText: {
-    fontSize: 13,
-    color: "#f85149",
-    background: "#0d1117",
-    padding: 12,
-    borderRadius: 6,
-    overflow: "auto",
-    maxHeight: 200,
-  },
-  stats: {
-    display: "flex",
-    gap: 24,
-    marginBottom: 16,
-  },
-  stat: {
-    display: "flex",
-    flexDirection: "column",
-    alignItems: "center",
-  },
-  statValue: {
-    fontSize: 24,
-    fontWeight: 700,
-    color: "#f0f6fc",
-  },
-  statLabel: {
-    fontSize: 12,
-    color: "#8b949e",
-  },
-  jsonBlock: {
-    fontSize: 12,
-    color: "#7ee787",
-    background: "#0d1117",
-    padding: 12,
-    borderRadius: 6,
-    overflow: "auto",
-    maxHeight: 300,
-    whiteSpace: "pre-wrap",
-    wordBreak: "break-all",
-  },
-};

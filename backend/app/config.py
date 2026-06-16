@@ -1,15 +1,20 @@
 """Application configuration via Pydantic Settings."""
 
-from typing import Optional
 from pydantic_settings import BaseSettings
 
 
 class Settings(BaseSettings):
     """Application settings loaded from environment variables / .env file."""
 
-    # ── Claude API ──────────────────────────────────────────────
-    anthropic_api_key: str = ""
-    anthropic_model: str = "claude-opus-4-8"
+    # ── LLM ───────────────────────────────────────────────────
+    llm_provider: str = "anthropic"  # anthropic | qwen | openai
+    llm_api_key: str = ""
+    llm_model: str = "qwen-plus"
+    llm_base_url: str = "https://dashscope.aliyuncs.com/compatible-mode/v1"
+
+    # ── Vision (VL) ────────────────────────────────────────────
+    vl_api_key: str = ""
+    vl_model: str = "qwen-vl-max"
 
     # ── Redis ───────────────────────────────────────────────────
     redis_url: str = "redis://localhost:6379/0"

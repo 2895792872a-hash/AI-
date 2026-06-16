@@ -185,16 +185,3 @@ es.addEventListener("done", (e) => console.log("Done:", JSON.parse(e.data)));
 
 ---
 
-## 📊 测试结果
-
-在 20 个典型浏览器自动化任务测试中（网页搜索、信息提取、表单填写），成功率达到 **85%**。
-
----
-
-## 📄 License
-
-MIT
-
----
-
-🤖 *Generated with [Claude Code](https://claude.com/claude-code)*

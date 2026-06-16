@@ -5,8 +5,7 @@ stages of the pipeline. Each node reads from and writes to this state.
 """
 
 from typing import Any, Optional
-from typing_extensions import TypedDict, Annotated
-from operator import add
+from typing_extensions import TypedDict
 
 
 class BrowserStep(TypedDict):
@@ -27,7 +26,7 @@ class AgentState(TypedDict):
     """Shared state flowing through the four-stage agent pipeline."""
 
     # ── Conversation ──────────────────────────────────────────
-    messages: Annotated[list[dict[str, Any]], add]
+    messages: list[dict[str, Any]]
 
     # ── User Input ────────────────────────────────────────────
     user_task: str
@@ -37,7 +36,7 @@ class AgentState(TypedDict):
     _task_retry_count: int  # internal retry counter for stage 1
 
     # ── Stage 2 Output ────────────────────────────────────────
-    browser_results: Annotated[list[dict[str, Any]], add]
+    browser_results: list[dict[str, Any]]
     current_step_index: int
 
     # ── Stage 3 Output ────────────────────────────────────────

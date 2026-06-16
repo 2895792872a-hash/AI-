@@ -27,6 +27,8 @@ secrets/
 # IDE / Editor
 # ═══════════════════════════════════════════════════════════
 .vscode/
+!.vscode/tasks.json
+.claude/
 .idea/
 *.swp
 *.swo
@@ -52,6 +54,7 @@ redis_data/
 playwright-report/
 test-results/
 browser_data/
+browser_profile/
 
 # ═══════════════════════════════════════════════════════════
 # OS
@@ -59,3 +62,18 @@ browser_data/
 Thumbs.db
 Desktop.ini
 $RECYCLE.BIN/
+
+# ═══════════════════════════════════════════════════════════
+# Project-specific
+# ═══════════════════════════════════════════════════════════
+memory.json
+*.docx
+~$*
+.playwright-mcp/
+ax-tree-books.txt
+screenshots/
+skills-lock.json
+storage-report-top.png
+*.png
+.agents/
+chat_data/

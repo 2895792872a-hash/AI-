@@ -11,32 +11,32 @@ import json
 from app.agent.state import AgentState
 from app.config import settings
 from app.core.logging import logger
-from app.services.claude_service import get_client
+from app.services.claude_service import create_message
 
-EXTRACTION_SYSTEM_PROMPT = """You are a data extraction specialist. Given raw text extracted from web pages,
-pull out the key structured information the user is looking for.
+EXTRACTION_SYSTEM_PROMPT = """You are a data extraction specialist. Extract the EXACT information the user wants from web page text.
 
-**Instructions:**
-1. Read the user's original task to understand what data they want.
-2. Read the browser results — these contain scraped text from web pages.
-3. Extract the relevant data into a clean JSON object.
-4. Only include information that is actually present in the results.
-5. If you can't find the requested information, set the value to null.
-6. IMPORTANT: Output only valid JSON, no other text.
+**How to extract:**
+1. Scan the browser results carefully — look for numbers, temperatures, prices, names, dates
+2. Pick out the specific data the user asked for
+3. If the data appears in multiple places, use the most prominent/certain one
+4. For weather: extract temperature, conditions, humidity, wind if visible
+5. For search results: extract the top few items with titles and snippets
 
-**Output format:**
+**Output (JSON only, no markdown):**
 ```json
 {
-  "query": "what the user asked for",
-  "data": {
-    "key1": "value1",
-    "key2": "value2"
-  },
+  "query": "what was asked",
+  "data": {"key":"extracted value"},
   "confidence": "high|medium|low",
-  "notes": "optional clarification about the data"
+  "notes": "brief note if data was partial or unclear"
 }
 ```
-"""
+
+**IMPORTANT:**
+- Extract ONLY what you SEE in the text. Do NOT invent data.
+- If you truly cannot find the information, set data:{} and confidence:"low"
+- For weather: look for patterns like "XX°C", "晴/雨/多云", temperature numbers
+- Output ONLY the JSON object, no markdown, no extra text."""
 
 
 async def run(state: AgentState) -> AgentState:
@@ -56,22 +56,15 @@ async def run(state: AgentState) -> AgentState:
     results_text = _format_browser_results(browser_results)
 
     try:
-        client = get_client()
-        response = await client.messages.create(
-            model=settings.anthropic_model,
+        response = await create_message(
+            system=EXTRACTION_SYSTEM_PROMPT,
+            user_content=(
+                f"**User's task:** {user_task}\n\n"
+                f"**Browser results:**\n{results_text}\n\n"
+                f"Extract the requested information as JSON."
+            ),
             max_tokens=4096,
             temperature=0.1,
-            system=EXTRACTION_SYSTEM_PROMPT,
-            messages=[
-                {
-                    "role": "user",
-                    "content": (
-                        f"**User's task:** {user_task}\n\n"
-                        f"**Browser results:**\n{results_text}\n\n"
-                        f"Extract the requested information as JSON."
-                    ),
-                }
-            ],
         )
 
         raw_text = "\n".join(

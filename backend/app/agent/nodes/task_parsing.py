@@ -13,44 +13,25 @@ from app.agent.state import AgentState, BrowserStep
 from app.agent.tools.security import validate_all_steps
 from app.config import settings
 from app.core.logging import logger
-from app.services.claude_service import get_client
+from app.services.claude_service import create_message
 
-TASK_PARSING_SYSTEM_PROMPT = """You are a browser automation planner. Given a user's natural-language task,
-decompose it into a sequence of atomic browser actions.
+TASK_PARSING_SYSTEM_PROMPT = """You are a browser automation planner. Decompose the user's task into minimal browser steps.
 
-**Available actions:**
-- navigate: Go to a URL
-- click: Click an element by CSS selector
-- type: Type text into an input field
-- scroll: Scroll the page up or down
-- extract: Get text content from the page or an element
-- screenshot: Take a screenshot
+**Actions:** navigate | type | click | scroll | extract | screenshot
 
-**Output format** — return a JSON object with a "steps" array:
+**Output (JSON only):**
 ```json
-{
-  "steps": [
-    {
-      "step_id": 1,
-      "action": "navigate",
-      "url": "https://...",
-      "target_selector": null,
-      "input_value": null,
-      "description": "Go to the homepage"
-    }
-  ]
-}
+{"steps": [{"step_id":1,"action":"navigate","url":"https://...","target_selector":null,"input_value":null,"description":"..."}]}
 ```
 
-**Rules:**
-1. Always start with navigate if a website is needed (use https://)
-2. For search tasks: navigate → type into search box → click search → extract results
-3. For form filling: navigate → type each field → click submit
-4. Use specific, common CSS selectors when possible (e.g. input[name='q'], button[type='submit'])
-5. Keep each step atomic — one action per step
-6. Maximum 15 steps per task
-7. If the task doesn't require a browser, return an empty steps array
-8. IMPORTANT: Only output valid JSON, no other text."""
+**CRITICAL RULES:**
+1. MAX 4 STEPS. Be concise.
+2. Search: navigate → type(Enter is auto-pressed, NO click needed) → extract
+3. Shopping: navigate → type → extract results directly
+4. type action: type FULL query at once. After typing, Enter is auto-pressed.
+5. DO NOT add a separate "click search button" step — it's automatic.
+6. Use generic selectors or null — Playwright has smart fallbacks.
+7. ONLY output valid JSON, no markdown, no extra text."""
 
 
 async def run(state: AgentState) -> AgentState:
@@ -71,18 +52,11 @@ async def run(state: AgentState) -> AgentState:
         )
 
     try:
-        client = get_client()
-        response = await client.messages.create(
-            model=settings.anthropic_model,
+        response = await create_message(
+            system=TASK_PARSING_SYSTEM_PROMPT,
+            user_content=state["user_task"] + retry_hint,
             max_tokens=4096,
             temperature=0.1,
-            system=TASK_PARSING_SYSTEM_PROMPT,
-            messages=[
-                {
-                    "role": "user",
-                    "content": state["user_task"] + retry_hint,
-                }
-            ],
         )
 
         raw_text = "\n".join(
@@ -102,6 +76,17 @@ async def run(state: AgentState) -> AgentState:
             )
             validated = validated[: settings.max_steps_per_task]
 
+        # If no valid steps were produced, record retry
+        if not validated:
+            logger.warning("[Stage 1] LLM returned no valid steps")
+            retry = state.get("_task_retry_count", 0)
+            if retry < 3:
+                state["_task_retry_count"] = retry + 1
+                state["parsed_steps"] = []
+            else:
+                state["error"] = "Task parsing failed: LLM could not produce valid steps"
+            return state
+
         state["parsed_steps"] = validated
         state["stage_progress"] = "operating"
 
@@ -113,7 +98,6 @@ async def run(state: AgentState) -> AgentState:
         retry = state.get("_task_retry_count", 0)
         if retry < 3:
             state["_task_retry_count"] = retry + 1
-            # Will retry via conditional edge
             state["parsed_steps"] = []
         else:
             state["error"] = f"Task parsing failed: {exc}"

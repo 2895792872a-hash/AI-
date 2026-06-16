@@ -1,0 +1,46 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "后端 - FastAPI",
+      "type": "shell",
+      "command": "python",
+      "args": ["-m", "uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8080", "--reload"],
+      "options": {
+        "cwd": "${workspaceFolder}/backend",
+        "env": {
+          "PYTHONIOENCODING": "utf-8"
+        }
+      },
+      "presentation": {
+        "reveal": "always",
+        "panel": "new",
+        "group": "backend"
+      },
+      "isBackground": true,
+      "problemMatcher": []
+    },
+    {
+      "label": "前端 - Vite",
+      "type": "shell",
+      "command": "npm",
+      "args": ["run", "dev"],
+      "options": {
+        "cwd": "${workspaceFolder}/frontend"
+      },
+      "presentation": {
+        "reveal": "always",
+        "panel": "new",
+        "group": "frontend"
+      },
+      "isBackground": true,
+      "problemMatcher": []
+    },
+    {
+      "label": "🚀 一键启动 (后端+前端)",
+      "dependsOn": ["后端 - FastAPI", "前端 - Vite"],
+      "dependsOrder": "parallel",
+      "problemMatcher": []
+    }
+  ]
+}

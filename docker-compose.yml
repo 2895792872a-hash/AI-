@@ -1,46 +1,40 @@
 services:
-  # ── API Server ────────────────────────────────────────
-  api:
+  # ── Backend API ────────────────────────────────────────
+  backend:
     build:
       context: ./backend
       dockerfile: Dockerfile
     ports:
-      - "8000:8000"
+      - "8080:8080"
     environment:
-      - REDIS_URL=redis://redis:6379/0
-      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
-      - ANTHROPIC_MODEL=${ANTHROPIC_MODEL:-claude-opus-4-8}
+      - LLM_PROVIDER=${LLM_PROVIDER:-deepseek}
+      - LLM_API_KEY=${LLM_API_KEY}
+      - LLM_MODEL=${LLM_MODEL:-deepseek-chat}
+      - LLM_BASE_URL=${LLM_BASE_URL:-https://api.deepseek.com/v1}
+      - VL_API_KEY=${VL_API_KEY}
+      - VL_MODEL=${VL_MODEL:-qwen-vl-max}
       - BROWSER_HEADLESS=true
+      - BROWSER_TIMEOUT_MS=30000
+      - API_HOST=0.0.0.0
+      - API_PORT=8080
       - CORS_ORIGINS=["http://localhost:3000","http://localhost:5173"]
-    depends_on:
-      redis:
-        condition: service_healthy
-    restart: unless-stopped
-
-  # ── Redis ─────────────────────────────────────────────
-  redis:
-    image: redis:7-alpine
-    ports:
-      - "6379:6379"
-    healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
-      interval: 5s
-      timeout: 3s
-      retries: 5
     volumes:
-      - redis_data:/data
+      - browser_profile:/app/browser_profile
+      - chat_data:/app/chat_data
+      - ./memory.json:/app/memory.json
     restart: unless-stopped
 
   # ── Frontend (Nginx) ──────────────────────────────────
   frontend:
-    image: nginx:alpine
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
     ports:
       - "3000:80"
-    volumes:
-      - ./frontend/dist:/usr/share/nginx/html:ro
     depends_on:
-      - api
+      - backend
     restart: unless-stopped
 
 volumes:
-  redis_data:
+  browser_profile:
+  chat_data:

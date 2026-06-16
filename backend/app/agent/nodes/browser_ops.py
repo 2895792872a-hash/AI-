@@ -7,13 +7,14 @@ with per-step retry, collects results, and emits progress events.
 from __future__ import annotations
 
 import asyncio
-from typing import Callable, Awaitable
+
 
 from app.agent.state import AgentState, BrowserStep
-from app.agent.tools.playwright_executor import managed_browser, BrowserSession
+from app.agent.tools.playwright_executor import managed_browser
 from app.agent.tools.security import check_blacklist
 from app.config import settings
 from app.core.logging import logger
+from app.services.progress import emit as emit_progress
 
 
 async def run(state: AgentState) -> AgentState:
@@ -25,7 +26,7 @@ async def run(state: AgentState) -> AgentState:
         state["stage_progress"] = "extracting"
         return state
 
-    progress_callback = _get_progress_callback(state)
+    task_id = state.get("task_id", "unknown")
 
     async with managed_browser() as browser:
         for i, step in enumerate(steps):
@@ -43,7 +44,7 @@ async def run(state: AgentState) -> AgentState:
                     "status": "failed",
                     "error": err,
                 })
-                await _emit(progress_callback, "step_error", {
+                await emit_progress(task_id, "step_error", {
                     "step_id": step.get("step_id"),
                     "action": step.get("action"),
                     "error": err,
@@ -52,7 +53,7 @@ async def run(state: AgentState) -> AgentState:
 
             # Emit step_start
             step["status"] = "in_progress"
-            await _emit(progress_callback, "step_start", {
+            await emit_progress(task_id, "step_start", {
                 "step_id": step.get("step_id"),
                 "action": step.get("action"),
                 "description": step.get("description", ""),
@@ -88,13 +89,13 @@ async def run(state: AgentState) -> AgentState:
 
             # Emit step_complete or step_error
             if result.get("status") == "completed":
-                await _emit(progress_callback, "step_complete", {
+                await emit_progress(task_id, "step_complete", {
                     "step_id": result.get("step_id"),
                     "action": result.get("action"),
                     "result_summary": str(result.get("text", result.get("url", "")))[:200],
                 })
             else:
-                await _emit(progress_callback, "step_error", {
+                await emit_progress(task_id, "step_error", {
                     "step_id": result.get("step_id"),
                     "action": result.get("action"),
                     "error": result.get("error", "Unknown error"),
@@ -112,18 +113,4 @@ async def run(state: AgentState) -> AgentState:
     return state
 
 
-# ── Progress helpers ─────────────────────────────────────────
 
-
-def _get_progress_callback(state: AgentState) -> Callable | None:
-    """Extract progress callback from state if available (set by API layer)."""
-    return state.get("_progress_callback", None)  # type: ignore[typeddict-unknown-key]
-
-
-async def _emit(callback, event_type: str, data: dict) -> None:
-    """Emit a progress event if callback is available."""
-    if callback:
-        try:
-            await callback(event_type, data)
-        except Exception:
-            pass  # Don't let progress errors break execution

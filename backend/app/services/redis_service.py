@@ -34,6 +34,8 @@ async def get_redis() -> aioredis.Redis:
             settings.redis_url,
             decode_responses=True,
             max_connections=20,
+            socket_connect_timeout=2,
+            socket_timeout=2,
         )
         # Verify connection
         await _pool.ping()

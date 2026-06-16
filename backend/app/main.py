@@ -3,6 +3,16 @@
 Sets up CORS, logging, lifespan (Redis connect/disconnect), and mounts routes.
 """
 
+import sys
+
+# ── Fix Python 3.14 on Windows: Playwright needs ProactorEventLoop ──
+if sys.platform == "win32":
+    import asyncio
+    try:
+        asyncio.set_event_loop_policy(asyncio.WindowsProactorEventLoopPolicy())
+    except Exception:
+        pass
+
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
@@ -22,10 +32,19 @@ async def lifespan(app: FastAPI):
     setup_logging()
     logger.info("AI Browser Assistant starting on %s:%s", settings.api_host, settings.api_port)
 
-    # Pre-connect Redis on startup (best-effort)
+    # Start background scheduler
     try:
+        from app.services.scheduler import start as start_scheduler
+        start_scheduler()
+    except Exception:
+        pass
+
+    # Pre-connect Redis on startup (fast-fail if unavailable)
+    try:
+        import asyncio as _asyncio
         from app.services.redis_service import get_redis
-        await get_redis()
+        await _asyncio.wait_for(get_redis(), timeout=2)
+        logger.info("Redis connected")
     except Exception:
         logger.warning("Redis not available — running without persistence")
 

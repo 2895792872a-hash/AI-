@@ -9,7 +9,7 @@ from __future__ import annotations
 from app.agent.state import AgentState
 from app.config import settings
 from app.core.logging import logger
-from app.services.claude_service import get_client
+from app.services.claude_service import create_message
 
 SUMMARIZATION_SYSTEM_PROMPT = """You are a helpful assistant that summarizes the results of an automated
 browser task. Given the user's original request, the browser actions performed,
@@ -62,18 +62,11 @@ async def run(state: AgentState) -> AgentState:
         )
 
     try:
-        client = get_client()
-        response = await client.messages.create(
-            model=settings.anthropic_model,
+        response = await create_message(
+            system=SUMMARIZATION_SYSTEM_PROMPT,
+            user_content="\n\n".join(context_parts),
             max_tokens=2048,
             temperature=0.3,
-            system=SUMMARIZATION_SYSTEM_PROMPT,
-            messages=[
-                {
-                    "role": "user",
-                    "content": "\n\n".join(context_parts),
-                }
-            ],
         )
 
         summary = "\n".join(
