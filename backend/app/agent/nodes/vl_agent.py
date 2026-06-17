@@ -89,12 +89,46 @@ async def _get_start_url(user_task: str) -> str | None:
     return None
 
 
+async def _decompose_task(user_task: str) -> list[str]:
+    """Break user task into ordered atomic steps. VL executes one step at a time."""
+    try:
+        from app.services.claude_service import get_text_response
+        plan = await get_text_response(
+            system="""Break the user's browser task into atomic steps. Each step should be ONE simple action.
+Return one step per line, in order. Format:
+1. Navigate to https://...
+2. Search for 'keyword'
+3. Click the highest-rated result
+4. Extract title, price, author
+
+Rules:
+- Each step = ONE action only
+- Be specific: include URLs, search terms, target elements
+- Keep total steps under 6
+- Last step should extract/collect the data the user wants""",
+            user_content=user_task,
+            max_tokens=300,
+            temperature=0,
+        )
+        steps = [s.strip() for s in plan.split("\n") if s.strip() and s.strip()[0].isdigit()]
+        if steps:
+            return [s.split(". ", 1)[-1] if ". " in s else s for s in steps]
+    except Exception:
+        pass
+    return [user_task]  # Fallback: use whole task as one step
+
+
 async def run(state: AgentState) -> AgentState:
     """Run the VL-guided iterative browser agent."""
     user_task = state["user_task"]
     task_id = state.get("task_id", "unknown")
     step_history: list[str] = []
     all_extracts: list[str] = []
+
+    # ── Task decomposition ──
+    steps = await _decompose_task(user_task)
+    current_step_idx = 0
+    logger.info("Task decomposed into %d steps: %s", len(steps), steps)
 
     # Pre-flight: figure out starting URL
     start_url = await _get_start_url(user_task)
@@ -103,7 +137,7 @@ async def run(state: AgentState) -> AgentState:
         logger.info("VL pre-flight URL: %s", start_url)
 
     await emit_progress(task_id, "stage_change", {
-        "stage": "operating", "message": "启动视觉 Agent...",
+        "stage": "operating", "message": f"任务分 {len(steps)} 步执行",
     })
 
     async with managed_browser() as browser:
@@ -177,10 +211,11 @@ async def run(state: AgentState) -> AgentState:
                     "description": "VL 分析截图中...",
                 })
 
+                current_step = steps[current_step_idx] if current_step_idx < len(steps) else user_task
                 decision = await decide_next_action(
                     screenshot_base64=screenshot_b64,
                     page_text=page_text,
-                    user_task=user_task,
+                    user_task=f"[步骤 {current_step_idx+1}/{len(steps)}] {current_step}",
                     step_history=step_history,
                     stuck_info=stuck,
                 )
@@ -203,12 +238,27 @@ async def run(state: AgentState) -> AgentState:
                 if page_has:
                     all_extracts.append(page_has)
 
-                # 4. Check if done
+                # 4. Check if done — advance step or finish
                 if is_done:
                     result_text = decision.get("result", "") or thinking
-                    state["stage_progress"] = "done"
-                    state["final_summary"] = result_text
-                    state["extracted_data"] = {"raw": result_text}
+                    all_extracts.append(result_text)
+                    current_step_idx += 1
+                    if current_step_idx >= len(steps):
+                        state["stage_progress"] = "done"
+                        state["final_summary"] = "\n".join(all_extracts[-len(steps):])
+                        state["extracted_data"] = {"raw": state["final_summary"]}
+                        await emit_progress(task_id, "done", {
+                            "summary": state["final_summary"],
+                            "total_steps": step_num,
+                            "success_count": step_num,
+                            "fail_count": 0,
+                            "data": state["extracted_data"],
+                        })
+                        return state
+                    else:
+                        logger.info("Step %d done, advancing to step %d: %s",
+                                    current_step_idx, current_step_idx+1, steps[current_step_idx][:60])
+                        continue
 
                     await emit_progress(task_id, "done", {
                         "summary": result_text,
